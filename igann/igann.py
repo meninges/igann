@@ -289,7 +289,8 @@ class IGANN:
                 "string",
             ]
         ).columns.tolist()
-        self.numerical_cols = list(set(X.columns) - set(self.categorical_cols))
+        # Sets are unordered, jumbling cols, sorting creates consistent order for reproducibility
+        self.numerical_cols = sorted(list(set(X.columns) - set(self.categorical_cols)))
 
         # Build a list of (name, transformer, columns)
         transformers = []
@@ -370,6 +371,10 @@ class IGANN:
         # Convert the final DataFrame to PyTorch tensor
         return torch.tensor(X_final.to_numpy(), dtype=torch.float32)
 
+    # Lambda function from below transferred to helper here
+    def criterion_helper(self, prediction, target):
+        return torch.nn.BCEWithLogitsLoss()(prediction, torch.nn.ReLU()(target))
+
     def fit(self, X, y, val_set=None):
         """
         This function fits the model on training data (X, y).
@@ -409,9 +414,8 @@ class IGANN:
                 C=1 / self.init_reg,
                 random_state=self.random_state,
             )
-            self.criterion = lambda prediction, target: torch.nn.BCEWithLogitsLoss()(
-                prediction, torch.nn.ReLU()(target)
-            )
+            # Lambda function transferred to helper, this lambda cannot be saved by pickle or dill
+            self.criterion = self.criterion_helper
         elif self.task == "regression":
             self.linear_model = Lasso(alpha=self.init_reg)
             self.criterion = torch.nn.MSELoss()
@@ -657,6 +661,10 @@ class IGANN:
             self.regressors = self.regressors[:best_iter]
             self.boosting_rates = self.boosting_rates[:best_iter]
 
+        #set seeds back from ELM __init__ seed changes
+        np.random.seed(self.random_state)
+        torch.manual_seed(self.random_state)
+        
         return best_loss
 
     def _print_results(
